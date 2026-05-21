@@ -1,0 +1,56 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: mc-db
+    environment:
+      POSTGRES_DB: maintainers_copilot
+      POSTGRES_USER: mc_app
+      POSTGRES_PASSWORD: local-dev-db-password
+    ports:
+      - "5432:5432"
+    volumes:
+      - mc_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mc_app -d maintainers_copilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7
+    container_name: mc-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - mc_redisdata:/data
+
+  minio:
+    image: minio/minio
+    container_name: mc-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - mc_minio:/data
+
+  vault:
+    image: hashicorp/vault:1.17
+    container_name: mc-vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    command: server -dev
+
+volumes:
+  mc_pgdata:
+  mc_redisdata:
+  mc_minio:

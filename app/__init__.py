@@ -1,0 +1,1 @@
+"""Maintainer's Copilot application package."""
