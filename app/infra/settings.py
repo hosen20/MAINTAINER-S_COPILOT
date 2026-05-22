@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     widget_port: int = 5173
     host_port: int = 8080
 
+    public_api_base_url: str = "http://localhost:8000"
+    widget_app_url: str = "http://localhost:5173"
+
     vault_addr: str = "http://localhost:8200"
     vault_token: str = "dev-root-token"
     vault_mount: str = "secret"
@@ -40,6 +43,8 @@ class Settings(BaseSettings):
 
     github_repo: str = "tiangolo/fastapi"
     github_token: str | None = None
+
+    model_server_url: str = "http://localhost:8001"
 
     model_config = SettingsConfigDict(
         env_file=".env",

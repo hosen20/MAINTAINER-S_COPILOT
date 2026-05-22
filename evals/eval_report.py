@@ -29,6 +29,15 @@ Weighted F1:
 
     OUTPUT.write_text(content)
 
+    report = {
+        "accuracy": metrics["accuracy"],
+        "macro_f1": metrics["macro_f1"],
+        "weighted_f1": metrics["weighted_f1"]
+    }
+
+    with open("eval_report.json", "w") as f:
+        json.dump(report, f, indent=2)
+
     print("Generated", OUTPUT)
 
 

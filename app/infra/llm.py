@@ -14,13 +14,12 @@ class LLMClient:
         self,
         *,
         base_url: str = "https://api.groq.com/openai/v1",
-        model: str = "llama-3.1-8b-instant",
-        timeout_seconds: float = 45.0,
+        timeout_seconds: float = 30.0,
     ) -> None:
         self.settings = get_settings()
         self.secrets = VaultClient(self.settings).read_app_secrets()
         self.base_url = base_url.rstrip("/")
-        self.model = model
+        self.model = self.secrets.llm_model
         self.timeout_seconds = timeout_seconds
 
     def chat_completion(
@@ -31,9 +30,9 @@ class LLMClient:
         tool_choice: str | dict[str, Any] = "auto",
         temperature: float = 0.2,
     ) -> dict[str, Any]:
-        if not self.secrets.llm_api_key:
+        if not self.secrets.llm_api_key or self.secrets.llm_api_key == "local-placeholder":
             raise InfrastructureError(
-                "Missing LLM API key in Vault. Seed llm_api_key before using chat."
+                "Missing real Groq API key in Vault. Update llm_api_key before using chat."
             )
 
         payload: dict[str, Any] = {
@@ -56,7 +55,9 @@ class LLMClient:
                     },
                     json=payload,
                 )
+
                 response.raise_for_status()
+
                 return response.json()
 
         except httpx.HTTPStatusError as exc:

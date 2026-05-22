@@ -7,8 +7,13 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.domain.auth import AuthenticatedUser
-from app.domain.chat import ChatMessage, ChatRequest, ChatResponse, MemoryWriteRequest, ToolCallRecord
-from app.domain.classification import IssueText
+from app.domain.chat import (
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    MemoryWriteRequest,
+    ToolCallRecord,
+)
 from app.domain.errors import DomainError, ToolFailureError
 from app.domain.rag import RAGQuery
 from app.infra.llm import LLMClient
@@ -50,38 +55,20 @@ class ChatService:
                 conversation_id=conversation_id,
             )
 
-            recent_memory = self.memory.format_recent_memories(
-                actor=actor,
-                limit=8,
-            )
+            recent_memory = self.memory.format_recent_memories(actor=actor, limit=8)
 
             system_prompt = self._load_system_prompt().replace(
                 "{{RECENT_MEMORY}}",
                 recent_memory,
             )
 
-            messages: list[dict[str, Any]] = [
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                }
-            ]
+            messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
             for item in previous_messages:
                 if item.role in {"user", "assistant"}:
-                    messages.append(
-                        {
-                            "role": item.role,
-                            "content": item.content,
-                        }
-                    )
+                    messages.append({"role": item.role, "content": item.content})
 
-            messages.append(
-                {
-                    "role": "user",
-                    "content": payload.message,
-                }
-            )
+            messages.append({"role": "user", "content": payload.message})
 
             first = self.llm.chat_completion(
                 messages=messages,
@@ -113,11 +100,14 @@ class ChatService:
                         default_repo=payload.repo,
                     )
 
+                    safe_args = redact_value(args)
+                    safe_result = redact_value(result)
+
                     used_tools.append(
                         ToolCallRecord(
                             name=tool_name,
-                            arguments=redact_value(args),
-                            result=redact_value(result),
+                            arguments=safe_args,
+                            result=safe_result,
                         )
                     )
 
@@ -126,9 +116,25 @@ class ChatService:
                             "role": "tool",
                             "tool_call_id": tool_call["id"],
                             "name": tool_name,
-                            "content": json.dumps(redact_value(result)),
+                            "content": json.dumps(safe_result),
                         }
                     )
+
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "You have just received tool results. Treat a tool result as successful "
+                            "when it contains useful fields such as `answer`, `chunks`, `label`, "
+                            "`entities`, `summary`, or memory data and does not contain an `error` field. "
+                            "Do not say a tool failed unless its result explicitly contains an `error` field. "
+                            "For RAG results, use the returned `answer` and `chunks` as evidence. "
+                            "If the chunks contain closed issues but no maintainer fix comments, say that "
+                            "only the available resolution signal is present. Do not invent missing fix details. "
+                            "Write the final response naturally for the user."
+                        ),
+                    }
+                )
 
                 final = self.llm.chat_completion(
                     messages=messages,
@@ -137,7 +143,6 @@ class ChatService:
                 )
 
                 answer = final["choices"][0]["message"].get("content") or ""
-
             else:
                 answer = assistant_message.get("content") or ""
 
@@ -175,33 +180,30 @@ class ChatService:
                 span.set_attribute("tool.name", name)
 
                 if name == "classify_issue":
-                    result = self.model_client.classify(
+                    return self.model_client.classify(
                         title=arguments.get("title", ""),
                         body=arguments.get("body", ""),
                     )
-                    return result
 
                 if name == "extract_entities":
-                    result = self.model_client.extract_entities(
+                    return self.model_client.extract_entities(
                         title=arguments.get("title", ""),
                         body=arguments.get("body", ""),
                     )
-                    return result
 
                 if name == "summarize_issue":
-                    result = self.model_client.summarize(
+                    return self.model_client.summarize(
                         title=arguments.get("title", ""),
                         body=arguments.get("body", ""),
                     )
-                    return result
 
                 if name == "rag_answer":
                     result = self.rag.answer(
                         RAGQuery(
                             question=arguments.get("question", ""),
-                            repo=arguments.get("repo") or default_repo,
-                            source_type=arguments.get("source_type"),
-                            top_k=arguments.get("top_k", 5),
+                            repo=default_repo,
+                            source_type=None,
+                            top_k=5,
                             use_reranker=True,
                         )
                     )
@@ -220,10 +222,7 @@ class ChatService:
                 raise ToolFailureError(f"Unknown tool: {name}")
 
         except DomainError as exc:
-            return {
-                "error": exc.code,
-                "message": exc.message,
-            }
+            return {"error": exc.code, "message": exc.message}
 
         except Exception as exc:
             return {
@@ -293,21 +292,14 @@ class ChatService:
                 "type": "function",
                 "function": {
                     "name": "rag_answer",
-                    "description": "Answer a maintainer question using the RAG corpus.",
+                    "description": (
+                        "Answer a maintainer question using the indexed RAG corpus. "
+                        "Only provide the user's question. Do not provide repo, source_type, or top_k."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "question": {"type": "string"},
-                            "repo": {"type": "string"},
-                            "source_type": {
-                                "type": "string",
-                                "enum": ["issue", "docs"],
-                            },
-                            "top_k": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "maximum": 10,
-                            },
                         },
                         "required": ["question"],
                     },

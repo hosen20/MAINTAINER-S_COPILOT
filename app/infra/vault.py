@@ -14,12 +14,16 @@ class AppSecrets:
     minio_access_key: str
     minio_secret_key: str
     llm_api_key: str | None = None
+    llm_model: str = "llama-3.1-8b-instant"
 
 
 class VaultClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.client = hvac.Client(url=settings.vault_addr, token=settings.vault_token)
+        self.client = hvac.Client(
+            url=settings.vault_addr,
+            token=settings.vault_token,
+        )
 
     def is_available(self) -> bool:
         return bool(self.client.is_authenticated())
@@ -32,14 +36,17 @@ class VaultClient:
             mount_point=self.settings.vault_mount,
             path=self.settings.vault_secret_path,
         )
+
         return dict(response["data"]["data"])
 
     def read_app_secrets(self) -> AppSecrets:
         data = self.read_secret()
+
         return AppSecrets(
             database_password=data["database_password"],
             jwt_secret=data["jwt_secret"],
             minio_access_key=data["minio_access_key"],
             minio_secret_key=data["minio_secret_key"],
             llm_api_key=data.get("llm_api_key"),
+            llm_model=data.get("llm_model", "llama-3.1-8b-instant"),
         )

@@ -1,3 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
@@ -19,6 +21,7 @@ opentelemetry-instrumentation-fastapi==0.50b0
 opentelemetry-instrumentation-sqlalchemy==0.50b0
 opentelemetry-instrumentation-redis==0.50b0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 python-jose[cryptography]==3.3.0
 email-validator==2.2.0
 scikit-learn==1.6.0
@@ -29,6 +32,8 @@ transformers==4.47.1
 sentence-transformers==3.3.1
 sentencepiece==0.2.0
 protobuf==5.29.2
-torch==2.5.1
+torch==2.5.1+cpu
 joblib==1.4.2
 tqdm==4.67.1
+streamlit==1.41.1
+requests==2.32.3

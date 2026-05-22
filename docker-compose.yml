@@ -3,15 +3,15 @@ services:
     image: pgvector/pgvector:pg16
     container_name: mc-db
     environment:
-      POSTGRES_DB: maintainers_copilot
-      POSTGRES_USER: mc_app
-      POSTGRES_PASSWORD: local-dev-db-password
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - mc_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mc_app -d maintainers_copilot"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -19,19 +19,19 @@ services:
   redis:
     image: redis:7
     container_name: mc-redis
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - mc_redisdata:/data
 
   minio:
     image: minio/minio
     container_name: mc-minio
+    command: ["server", "/data", "--console-address", ":9001"]
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin123
-    command: server /data --console-address ":9001"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -43,12 +43,97 @@ services:
     container_name: mc-vault
     cap_add:
       - IPC_LOCK
+    command: ["server", "-dev"]
     environment:
-      VAULT_DEV_ROOT_TOKEN_ID: dev-root-token
       VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN}
     ports:
       - "8200:8200"
-    command: server -dev
+
+  model-server:
+    build:
+      context: .
+      dockerfile: model_server/Dockerfile.model_server
+    container_name: mc-model-server
+    depends_on:
+      - vault
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_TOKEN}
+      MODEL_SERVER_PORT: 8001
+    ports:
+      - "8001:8001"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: mc-api
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+      vault:
+        condition: service_started
+      model-server:
+        condition: service_started
+    environment:
+      APP_ENV: docker
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_TOKEN}
+      VAULT_MOUNT: ${VAULT_MOUNT}
+      VAULT_SECRET_PATH: ${VAULT_SECRET_PATH}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_SECURE: ${MINIO_SECURE}
+      MODEL_SERVER_URL: http://model-server:8001
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL}
+      WIDGET_APP_URL: ${WIDGET_APP_URL}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL}
+    ports:
+      - "8000:8000"
+
+  chatbot:
+    build:
+      context: .
+      dockerfile: chatbot/Dockerfile.chatbot
+    container_name: mc-chatbot
+    depends_on:
+      - api
+    environment:
+      API_BASE_URL: http://api:8000
+    ports:
+      - "8501:8501"
+
+  widget:
+    build:
+      context: .
+      dockerfile: widget/Dockerfile.widget
+    container_name: mc-widget
+    ports:
+      - "5173:80"
+
+  host:
+    build:
+      context: .
+      dockerfile: demo/host/Dockerfile.host
+    container_name: mc-host
+    depends_on:
+      - api
+      - widget
+    ports:
+      - "8080:80"
 
 volumes:
   mc_pgdata:
